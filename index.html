@@ -132,6 +132,14 @@
                 this.trail = [];
                 this.maxTrailLength = 8;
                 this.merged = false;
+                
+                // 形状のパラメータ
+                this.shape = {
+                    distortionX: random(0.8, 1.2), // 横方向の歪み
+                    distortionY: random(0.9, 1.1), // 縦方向の歪み
+                    asymmetry: random(-0.1, 0.1), // 左右の非対称性
+                    flattenFactor: 0 // 表面への平坦化度合い
+                };
             }
 
             update() {
@@ -141,6 +149,9 @@
                 
                 // 位置更新
                 this.y += this.velocity;
+                
+                // 速度に基づく形状の更新
+                this.updateShape();
                 
                 // トレイル（軌跡）の更新
                 this.trail.push({x: this.x, y: this.y, r: this.radius * 0.5});
@@ -175,6 +186,120 @@
                 }
             }
 
+            updateShape() {
+                // 速度に基づく縦方向の伸長（ティアドロップ効果）
+                if (this.velocity > 1.5) {
+                    // 高速時：強いティアドロップ効果
+                    this.shape.distortionY = 1 + (this.velocity * 0.25);
+                    this.shape.distortionX = Math.max(0.6, 1 - (this.velocity * 0.12));
+                } else if (this.velocity > 0.5) {
+                    // 中速時：軽いティアドロップ効果
+                    this.shape.distortionY = 1 + (this.velocity * 0.15);
+                    this.shape.distortionX = Math.max(0.75, 1 - (this.velocity * 0.08));
+                } else {
+                    // 静止または低速時は表面に平たくなる
+                    this.shape.distortionY = random(0.8, 1.0);
+                    this.shape.distortionX = random(1.1, 1.35);
+                    this.shape.flattenFactor = random(0.15, 0.35);
+                }
+                
+                // サイズに基づく歪み（大きな水滴ほど重力で変形）
+                if (this.radius > 8) {
+                    this.shape.distortionY += 0.15;
+                    this.shape.asymmetry = random(-0.2, 0.2);
+                } else if (this.radius > 5) {
+                    this.shape.distortionY += 0.05;
+                    this.shape.asymmetry = random(-0.1, 0.1);
+                }
+                
+                // 微妙な揺らぎ効果
+                this.shape.distortionX += random(-0.05, 0.05);
+                this.shape.distortionY += random(-0.03, 0.03);
+            }
+
+            // 現実的な水滴の形状を描画
+            drawRealisticDroplet(ctx, x, y, radius, shape, alpha, color) {
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = color;
+                
+                // 基本的な楕円形状から開始
+                ctx.save();
+                ctx.translate(x, y);
+                
+                // 形状の歪みを適用
+                ctx.scale(shape.distortionX, shape.distortionY);
+                
+                // 非対称性を追加
+                if (shape.asymmetry !== 0) {
+                    ctx.transform(1, 0, shape.asymmetry, 1, 0, 0);
+                }
+                
+                ctx.beginPath();
+                
+                if (this.velocity > 1) {
+                    // 高速移動時：ティアドロップ形状
+                    this.drawTearDrop(ctx, radius);
+                } else {
+                    // 低速または静止時：変形した楕円
+                    this.drawDeformedEllipse(ctx, radius, shape.flattenFactor);
+                }
+                
+                ctx.fill();
+                ctx.restore();
+            }
+            
+            // ティアドロップ形状を描画
+            drawTearDrop(ctx, radius) {
+                // より現実的なティアドロップ形状
+                ctx.beginPath();
+                
+                // 上部の尖った部分
+                ctx.moveTo(0, -radius * 0.7);
+                ctx.quadraticCurveTo(-radius * 0.4, -radius * 0.2, -radius * 0.6, radius * 0.1);
+                ctx.quadraticCurveTo(-radius * 0.3, radius * 0.5, 0, radius * 0.8);
+                ctx.quadraticCurveTo(radius * 0.3, radius * 0.5, radius * 0.6, radius * 0.1);
+                ctx.quadraticCurveTo(radius * 0.4, -radius * 0.2, 0, -radius * 0.7);
+                
+                ctx.closePath();
+            }
+            
+            // 変形した楕円を描画
+            drawDeformedEllipse(ctx, radius, flattenFactor) {
+                // より現実的な不規則楕円
+                ctx.beginPath();
+                
+                let points = [];
+                let numPoints = 12;
+                
+                for (let i = 0; i < numPoints; i++) {
+                    let angle = (i / numPoints) * Math.PI * 2;
+                    let baseX = Math.cos(angle) * radius;
+                    let baseY = Math.sin(angle) * radius * (1 - flattenFactor * 0.4);
+                    
+                    // 表面張力による微妙な波打ち
+                    let surfaceTension = Math.sin(angle * 3) * radius * 0.05;
+                    let irregularity = random(0.92, 1.08);
+                    
+                    let x = baseX * irregularity + surfaceTension;
+                    let y = baseY * irregularity;
+                    
+                    points.push({x, y});
+                }
+                
+                // スムーズな曲線で接続
+                ctx.moveTo(points[0].x, points[0].y);
+                
+                for (let i = 0; i < points.length; i++) {
+                    let current = points[i];
+                    let next = points[(i + 1) % points.length];
+                    let controlX = current.x + (next.x - current.x) * 0.5;
+                    let controlY = current.y + (next.y - current.y) * 0.5;
+                    ctx.quadraticCurveTo(current.x, current.y, controlX, controlY);
+                }
+                
+                ctx.closePath();
+            }
+
             display() {
                 // トレイルの描画（より透明な白色で、グラデーション効果）
                 for (let i = 0; i < this.trail.length; i++) {
@@ -186,40 +311,77 @@
                     ctx.fill();
                 }
 
-                // 水滴の影（微妙な灰色の影）
-                ctx.globalAlpha = this.opacity * 0.08;
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                ctx.beginPath();
-                ctx.arc(this.x + this.radius * 0.15, this.y + this.radius * 0.15, this.radius * 0.9, 0, Math.PI * 2);
-                ctx.fill();
+                // 水滴の影（現実的な形状で）
+                let shadowShape = {
+                    distortionX: this.shape.distortionX * 0.9,
+                    distortionY: this.shape.distortionY * 0.95,
+                    asymmetry: this.shape.asymmetry,
+                    flattenFactor: this.shape.flattenFactor
+                };
+                this.drawRealisticDroplet(
+                    ctx, 
+                    this.x + this.radius * 0.15, 
+                    this.y + this.radius * 0.15, 
+                    this.radius * 0.9, 
+                    shadowShape,
+                    this.opacity * 0.08, 
+                    'rgba(0, 0, 0, 0.1)'
+                );
                 
                 // 水滴の外側の輪郭（より透明で大きめ）
-                ctx.globalAlpha = this.opacity * 0.15;
-                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.15})`;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius * 1.1, 0, Math.PI * 2);
-                ctx.fill();
+                let outerShape = {
+                    distortionX: this.shape.distortionX * 1.05,
+                    distortionY: this.shape.distortionY * 1.03,
+                    asymmetry: this.shape.asymmetry * 0.8,
+                    flattenFactor: this.shape.flattenFactor * 0.7
+                };
+                this.drawRealisticDroplet(
+                    ctx, 
+                    this.x, 
+                    this.y, 
+                    this.radius * 1.1, 
+                    outerShape,
+                    this.opacity * 0.15, 
+                    `rgba(255, 255, 255, ${this.opacity * 0.15})`
+                );
                 
-                // メインの水滴（透明な白色）
-                ctx.globalAlpha = this.opacity * 0.35;
-                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.35})`;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fill();
+                // メインの水滴（現実的な形状）
+                this.drawRealisticDroplet(
+                    ctx, 
+                    this.x, 
+                    this.y, 
+                    this.radius, 
+                    this.shape,
+                    this.opacity * 0.35, 
+                    `rgba(255, 255, 255, ${this.opacity * 0.35})`
+                );
                 
-                // 水滴の縁（より明るい白の輪郭）
+                // 水滴の縁（現実的な形状の輪郭）
                 ctx.globalAlpha = this.opacity * 0.5;
                 ctx.strokeStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
                 ctx.lineWidth = 0.5;
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.scale(this.shape.distortionX, this.shape.distortionY);
+                if (this.shape.asymmetry !== 0) {
+                    ctx.transform(1, 0, this.shape.asymmetry, 1, 0, 0);
+                }
                 ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                if (this.velocity > 1) {
+                    this.drawTearDrop(ctx, this.radius);
+                } else {
+                    this.drawDeformedEllipse(ctx, this.radius, this.shape.flattenFactor);
+                }
                 ctx.stroke();
+                ctx.restore();
                 
-                // 内側のハイライト（明るい白色の反射）
+                // 内側のハイライト（位置を形状に合わせて調整）
                 ctx.globalAlpha = this.opacity * 0.85;
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
                 ctx.beginPath();
-                ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.35, this.radius * 0.18, 0, Math.PI * 2);
+                let highlightX = this.x - this.radius * 0.35 * this.shape.distortionX;
+                let highlightY = this.y - this.radius * 0.35 * this.shape.distortionY;
+                ctx.arc(highlightX, highlightY, this.radius * 0.18, 0, Math.PI * 2);
                 ctx.fill();
                 
                 // 追加の小さなハイライト（より現実的な反射効果）
@@ -227,7 +389,9 @@
                     ctx.globalAlpha = this.opacity * 0.6;
                     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
                     ctx.beginPath();
-                    ctx.arc(this.x + this.radius * 0.2, this.y - this.radius * 0.1, this.radius * 0.08, 0, Math.PI * 2);
+                    let highlight2X = this.x + this.radius * 0.2 * this.shape.distortionX;
+                    let highlight2Y = this.y - this.radius * 0.1 * this.shape.distortionY;
+                    ctx.arc(highlight2X, highlight2Y, this.radius * 0.08, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 
