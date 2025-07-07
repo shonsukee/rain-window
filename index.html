@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rain Window - 水滴が流れる窓</title>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 50%, #6c5ce7 100%);
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        canvas {
+            display: block;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(2px);
+        }
+        
+        .title {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">雨の窓 - Rain Window</div>
+    <div class="instructions">
+        クリック: 水滴を追加 | Rキー: リセット
+    </div>
+
+    <script>
+        let canvas, ctx;
+        let drops = [];
+        let gravity = 0.2;
+        let maxDrops = 100;
+        let animationId;
+
+        // ユーティリティ関数
+        function random(min, max) {
+            if (max === undefined) {
+                max = min;
+                min = 0;
+            }
+            return Math.random() * (max - min) + min;
+        }
+
+        function map(value, start1, stop1, start2, stop2) {
+            return start2 + (stop2 - start2) * ((value - start1) / (stop1 - start1));
+        }
+
+        function dist(x1, y1, x2, y2) {
+            return Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+        }
+
+        function constrain(value, min, max) {
+            return Math.min(Math.max(value, min), max);
+        }
+
+        class Droplet {
+            constructor(x, y, radius = null) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius || random(3, 12);
+                this.velocity = 0;
+                this.acceleration = gravity;
+                this.opacity = random(0.6, 0.9);
+                this.trail = [];
+                this.maxTrailLength = 8;
+                this.merged = false;
+            }
+
+            update() {
+                // 重力による加速
+                this.velocity += this.acceleration;
+                this.velocity = Math.min(this.velocity, this.radius * 0.5);
+                
+                // 位置更新
+                this.y += this.velocity;
+                
+                // トレイル（軌跡）の更新
+                this.trail.push({x: this.x, y: this.y, r: this.radius * 0.7});
+                if (this.trail.length > this.maxTrailLength) {
+                    this.trail.shift();
+                }
+                
+                // 大きな水滴は少し横に揺れる
+                if (this.radius > 8) {
+                    this.x += Math.sin(this.y * 0.01) * 0.3;
+                }
+            }
+
+            display() {
+                // トレイルの描画
+                for (let i = 0; i < this.trail.length; i++) {
+                    let alpha = map(i, 0, this.trail.length - 1, 0, this.opacity * 0.5);
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+                    ctx.beginPath();
+                    ctx.arc(this.trail[i].x, this.trail[i].y, this.trail[i].r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // メインの水滴
+                ctx.globalAlpha = this.opacity * 0.3;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.2, this.y - this.radius * 0.2, this.radius * 1.2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // メインの水滴
+                ctx.globalAlpha = this.opacity;
+                ctx.fillStyle = `rgba(180, 200, 255, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 内側のハイライト
+                ctx.globalAlpha = this.opacity * 0.8;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.3, this.y - this.radius * 0.3, this.radius * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.globalAlpha = 1;
+            }
+
+            collidesWith(other) {
+                let distance = dist(this.x, this.y, other.x, other.y);
+                return distance < (this.radius + other.radius);
+            }
+
+            merge(other) {
+                let newRadius = Math.sqrt(this.radius * this.radius + other.radius * other.radius);
+                this.radius = newRadius;
+                this.x = (this.x * this.radius + other.x * other.radius) / (this.radius + other.radius);
+                this.velocity = (this.velocity + other.velocity) * 0.8;
+                this.opacity = Math.min(0.9, (this.opacity + other.opacity) / 2);
+                other.merged = true;
+            }
+
+            isOffScreen() {
+                return this.y > canvas.height + this.radius;
+            }
+        }
+
+        function setup() {
+            canvas = document.createElement('canvas');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            document.body.appendChild(canvas);
+            ctx = canvas.getContext('2d');
+            
+            // 初期の水滴を生成
+            for (let i = 0; i < 15; i++) {
+                drops.push(new Droplet(random(canvas.width), random(-50, -10)));
+            }
+            
+            // イベントリスナー
+            canvas.addEventListener('click', function(e) {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                drops.push(new Droplet(x, y, random(5, 15)));
+            });
+            
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'r' || e.key === 'R') {
+                    drops = [];
+                }
+            });
+            
+            window.addEventListener('resize', function() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            });
+            
+            draw();
+        }
+
+        function draw() {
+            // 背景をクリア（透明な窓ガラス効果）
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(220, 240, 255, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 雨粒を時々追加
+            if (Math.random() < 0.1 && drops.length < maxDrops) {
+                drops.push(new Droplet(random(canvas.width), random(-50, -10)));
+            }
+
+            // 水滴の更新と描画
+            for (let i = drops.length - 1; i >= 0; i--) {
+                let drop = drops[i];
+                
+                if (!drop.merged) {
+                    drop.update();
+                    drop.display();
+                    
+                    // 他の水滴との衝突チェック
+                    for (let j = i - 1; j >= 0; j--) {
+                        let other = drops[j];
+                        if (!other.merged && drop.collidesWith(other)) {
+                            if (drop.radius >= other.radius) {
+                                drop.merge(other);
+                            } else {
+                                other.merge(drop);
+                            }
+                        }
+                    }
+                }
+                
+                // 画面外または合体済みの水滴を削除
+                if (drop.isOffScreen() || drop.merged) {
+                    drops.splice(i, 1);
+                }
+            }
+
+            // 窓の縁のエフェクト
+            drawWindowEdges();
+            
+            animationId = requestAnimationFrame(draw);
+        }
+
+        function drawWindowEdges() {
+            // 窓枠の影
+            ctx.globalAlpha = 0.4;
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(0, 0, canvas.width, canvas.height);
+            
+            // コーナーの水滴集積エフェクト
+            ctx.fillStyle = 'rgba(180, 200, 255, 0.3)';
+            const corners = [
+                {x: 0, y: 0},
+                {x: canvas.width, y: 0},
+                {x: 0, y: canvas.height},
+                {x: canvas.width, y: canvas.height}
+            ];
+            
+            corners.forEach(corner => {
+                for (let i = 0; i < 3; i++) {
+                    let offset = i * 5;
+                    let x = corner.x + random(-offset, offset);
+                    let y = corner.y + random(-offset, offset);
+                    ctx.beginPath();
+                    ctx.arc(x, y, random(2, 6), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+            
+            ctx.globalAlpha = 1;
+        }
+
+        // 初期化
+        document.addEventListener('DOMContentLoaded', setup);
+    </script>
+</body>
+</html>
