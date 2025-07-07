@@ -52,6 +52,7 @@
     <script>
         let canvas, ctx;
         let drops = [];
+        let trailResidues = []; // 水滴の軌跡に残る小さな水の粒
         let gravity = 0.2;
         let maxDrops = 100;
         let animationId;
@@ -77,6 +78,49 @@
             return Math.min(Math.max(value, min), max);
         }
 
+        class TrailResidue {
+            constructor(x, y, radius) {
+                this.x = x;
+                this.y = y;
+                this.radius = radius;
+                this.opacity = random(0.2, 0.6);
+                this.life = random(200, 400); // フレーム数での寿命
+                this.maxLife = this.life;
+                this.fadeSpeed = random(0.005, 0.01);
+            }
+            
+            update() {
+                this.life--;
+                // より自然なフェードアウト
+                let fadeRatio = this.life / this.maxLife;
+                this.opacity = fadeRatio * random(0.2, 0.6);
+            }
+            
+            display() {
+                if (this.life <= 0) return;
+                
+                // メインの残留水滴
+                ctx.globalAlpha = this.opacity;
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 非常に小さなハイライト（半径が0.8以上の場合のみ）
+                if (this.radius >= 0.8) {
+                    ctx.globalAlpha = this.opacity * 0.7;
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.beginPath();
+                    ctx.arc(this.x - this.radius * 0.4, this.y - this.radius * 0.4, this.radius * 0.2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            isDead() {
+                return this.life <= 0;
+            }
+        }
+
         class Droplet {
             constructor(x, y, radius = null) {
                 this.x = x;
@@ -99,9 +143,30 @@
                 this.y += this.velocity;
                 
                 // トレイル（軌跡）の更新
-                this.trail.push({x: this.x, y: this.y, r: this.radius * 0.7});
+                this.trail.push({x: this.x, y: this.y, r: this.radius * 0.5});
                 if (this.trail.length > this.maxTrailLength) {
                     this.trail.shift();
+                }
+                
+                // 大きな水滴の場合、軌跡に小さな水を残す（より頻繁に、より現実的な配置で）
+                if (this.radius > 5 && Math.random() < 0.4) {
+                    let residueRadius = random(0.8, this.radius * 0.25);
+                    let offsetX = random(-this.radius * 0.4, this.radius * 0.4);
+                    trailResidues.push(new TrailResidue(
+                        this.x + offsetX, 
+                        this.y + random(-2, 2), 
+                        residueRadius
+                    ));
+                }
+                
+                // 中程度の水滴も時々小さな残留物を残す
+                if (this.radius > 3 && this.radius <= 5 && Math.random() < 0.15) {
+                    let residueRadius = random(0.5, 1.5);
+                    trailResidues.push(new TrailResidue(
+                        this.x + random(-this.radius * 0.3, this.radius * 0.3), 
+                        this.y, 
+                        residueRadius
+                    ));
                 }
                 
                 // 大きな水滴は少し横に揺れる
@@ -111,36 +176,60 @@
             }
 
             display() {
-                // トレイルの描画
+                // トレイルの描画（より透明な白色で、グラデーション効果）
                 for (let i = 0; i < this.trail.length; i++) {
-                    let alpha = map(i, 0, this.trail.length - 1, 0, this.opacity * 0.5);
+                    let alpha = map(i, 0, this.trail.length - 1, 0, this.opacity * 0.25);
                     ctx.globalAlpha = alpha;
-                    ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
                     ctx.beginPath();
                     ctx.arc(this.trail[i].x, this.trail[i].y, this.trail[i].r, 0, Math.PI * 2);
                     ctx.fill();
                 }
 
-                // メインの水滴
-                ctx.globalAlpha = this.opacity * 0.3;
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+                // 水滴の影（微妙な灰色の影）
+                ctx.globalAlpha = this.opacity * 0.08;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
                 ctx.beginPath();
-                ctx.arc(this.x - this.radius * 0.2, this.y - this.radius * 0.2, this.radius * 1.2, 0, Math.PI * 2);
+                ctx.arc(this.x + this.radius * 0.15, this.y + this.radius * 0.15, this.radius * 0.9, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // メインの水滴
-                ctx.globalAlpha = this.opacity;
-                ctx.fillStyle = `rgba(180, 200, 255, ${this.opacity})`;
+                // 水滴の外側の輪郭（より透明で大きめ）
+                ctx.globalAlpha = this.opacity * 0.15;
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.15})`;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 1.1, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // メインの水滴（透明な白色）
+                ctx.globalAlpha = this.opacity * 0.35;
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity * 0.35})`;
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // 内側のハイライト
-                ctx.globalAlpha = this.opacity * 0.8;
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                // 水滴の縁（より明るい白の輪郭）
+                ctx.globalAlpha = this.opacity * 0.5;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${this.opacity * 0.5})`;
+                ctx.lineWidth = 0.5;
                 ctx.beginPath();
-                ctx.arc(this.x - this.radius * 0.3, this.y - this.radius * 0.3, this.radius * 0.3, 0, Math.PI * 2);
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                // 内側のハイライト（明るい白色の反射）
+                ctx.globalAlpha = this.opacity * 0.85;
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.beginPath();
+                ctx.arc(this.x - this.radius * 0.35, this.y - this.radius * 0.35, this.radius * 0.18, 0, Math.PI * 2);
                 ctx.fill();
+                
+                // 追加の小さなハイライト（より現実的な反射効果）
+                if (this.radius > 4) {
+                    ctx.globalAlpha = this.opacity * 0.6;
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.beginPath();
+                    ctx.arc(this.x + this.radius * 0.2, this.y - this.radius * 0.1, this.radius * 0.08, 0, Math.PI * 2);
+                    ctx.fill();
+                }
                 
                 ctx.globalAlpha = 1;
             }
@@ -187,6 +276,7 @@
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'r' || e.key === 'R') {
                     drops = [];
+                    trailResidues = [];
                 }
             });
             
@@ -207,6 +297,17 @@
             // 雨粒を時々追加
             if (Math.random() < 0.1 && drops.length < maxDrops) {
                 drops.push(new Droplet(random(canvas.width), random(-50, -10)));
+            }
+
+            // 軌跡の残留物の更新と描画
+            for (let i = trailResidues.length - 1; i >= 0; i--) {
+                let residue = trailResidues[i];
+                residue.update();
+                residue.display();
+                
+                if (residue.isDead()) {
+                    trailResidues.splice(i, 1);
+                }
             }
 
             // 水滴の更新と描画
@@ -249,8 +350,8 @@
             ctx.lineWidth = 3;
             ctx.strokeRect(0, 0, canvas.width, canvas.height);
             
-            // コーナーの水滴集積エフェクト
-            ctx.fillStyle = 'rgba(180, 200, 255, 0.3)';
+            // コーナーの水滴集積エフェクト（より透明な白色で）
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
             const corners = [
                 {x: 0, y: 0},
                 {x: canvas.width, y: 0},
@@ -263,6 +364,7 @@
                     let offset = i * 5;
                     let x = corner.x + random(-offset, offset);
                     let y = corner.y + random(-offset, offset);
+                    ctx.globalAlpha = random(0.1, 0.3);
                     ctx.beginPath();
                     ctx.arc(x, y, random(2, 6), 0, Math.PI * 2);
                     ctx.fill();
